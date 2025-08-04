@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./style.css">
+  <title>Rutina Jessica</title>
+</head>
+<body>
+  <header>
+    <h1>Rutina Semanal</h1>
+    <button id="resetBtn">Reiniciar</button>
+  </header>
+  <section class="section">
+    <h2 id="weekInfo"></h2>
+    <div class="grid-semanas" id="semanas"></div>
+    <label>Progreso: <span id="progressText">0%</span></label>
+    <progress id="progressBar" value="0" max="100"></progress>
+  </section>
+  <div id="app"></div>
+  <script>
+    const TOTAL_WEEKS = 24;
+    const STORAGE_KEY = 'rutinaChecked';
+    const START_KEY = 'rutinaStart';
+    const KCAL_KEY = 'rutinaKcal';
+    const KCAL_WEEK_KEY = 'rutinaKcalSemana';
+    const WEEK_DONE_KEY = 'rutinaWeekDone';
+
+    const days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+    const routine = {
+      "Lunes": ["Press de pecho (3x12)", "Elevaciones laterales (2x15)", "Fondos en banco (2x12)", "Plancha abdominal (3x30s)", "Vóley"],
+      "Martes": ["Sentadilla libre (3x12)", "Peso muerto rumano (3x15)", "Hip thrust (2x15)", "Crunch (3x15)", "Stretching", "Yoga"],
+      "Miércoles": [
+        "Circuito funcional (2 rondas):",
+        "- Flexiones de pecho modificadas (12 rep)",
+        "- Remo con banda elástica (12 rep)",
+        "- Sentadillas con peso corporal (12 rep)",
+        "- Zancadas sin peso (12 rep)",
+        "- Plancha lateral (20 seg x lado)",
+        "Descansar 30 seg entre ejercicios",
+        "Plancha lateral (2x20s)",
+        "Calistenia",
+        "Vóley"
+      ],
+      "Jueves": ["Jalón al pecho (3x12)", "Remo mancuerna (3x12)", "Curl bíceps (2x15)", "Elevaciones piernas (3x12)", "Stretching", "Yoga"],
+      "Viernes": ["Prensa (3x15)", "Curl femoral (3x12)", "Abducción cadera (2x15)", "Pallof press (2x12)", "Vóley"],
+      "Sábado": ["Sentadilla goblet (2x15)", "Press hombros (2x15)", "Face-pull (2x15)", "Plancha lateral + rotación (2x10)", "Movilidad"],
+      "Domingo": ["Cardio suave (30 min)", "Estiramientos"]
+    };
+
+    function getObj(key) {
+      return JSON.parse(localStorage.getItem(key) || '{}');
+    }
+    function setObj(key, obj) {
+      localStorage.setItem(key, JSON.stringify(obj));
+    }
+
+    function getWeekNumber() {
+      let start = localStorage.getItem(START_KEY);
+      if (!start) {
+        start = new Date().toISOString();
+        localStorage.setItem(START_KEY, start);
+      }
+      const startDate = new Date(start);
+      const now = new Date();
+      const diffMs = now - startDate;
+      const diffWeeks = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7)) + 1;
+      return Math.min(diffWeeks, TOTAL_WEEKS);
+    }
+
+    function sumWeekKcal(weekIdx, kcalData) {
+      let total = 0;
+      for(let d=0; d<7; ++d) {
+        const key = `w${weekIdx}-d${d}`;
+        if (kcalData[key]) {
+          total += parseInt(kcalData[key]) || 0;
+        }
+      }
+      return total;
+    }
+
+    function buildSemanasListado(weekNumber, kcalData, weekDone) {
+      const cont = document.getElementById('semanas');
+      cont.innerHTML = '';
+      for (let i = 1; i <= TOTAL_WEEKS; i++) {
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.alignItems = 'center';
+        // Casilla para marcar semana completada
+        const ch = document.createElement('input');
+        ch.type = 'checkbox';
+        ch.checked = !!weekDone[i];
+        ch.onchange = () => {
+          weekDone[i] = ch.checked;
+          setObj(WEEK_DONE_KEY, weekDone);
+        };
+        div.appendChild(ch);
+        // Nombre de semana
+        const label = document.createElement('span');
+        label.innerText = 'Semana ' + i;
+        if (i === weekNumber) label.className = 'bold';
+        label.style.marginRight = '4px';
+        div.appendChild(label);
+        // Mensaje "Subir el peso" cada 2 semanas
+        if (i % 2 === 0) {
+          const msg = document.createElement('span');
+          msg.innerText = '⬆️ Subir el peso';
+          msg.style.color = '#2563eb';
+          msg.style.fontSize = '0.92em';
+          msg.style.marginLeft = '3px';
+          div.appendChild(msg);
+        }
+        // Cuadro para mostrar kcal sumadas de la semana
+        const kcalbox = document.createElement('input');
+        kcalbox.type = 'number';
+        kcalbox.readOnly = true;
+        kcalbox.value = sumWeekKcal(i, kcalData);
+        kcalbox.title = 'Total kcal semana';
+        kcalbox.style.marginLeft = '6px';
+        kcalbox.style.width = '70px';
+        kcalbox.style.background = '#e0e7ef';
+        kcalbox.style.fontWeight = 'bold';
+        div.appendChild(kcalbox);
+
+        const kcalLabel = document.createElement('span');
+        kcalLabel.className = 'kcal-label';
+        kcalLabel.innerText = 'kcal/semana';
+        div.appendChild(kcalLabel);
+
+        cont.appendChild(div);
+      }
+    }
+
+    function updateProgress(checked) {
+      const total = Object.values(routine).flat().length * TOTAL_WEEKS;
+      const done = Object.values(checked).filter(v => v).length;
+      const percent = Math.round((done/total)*100);
+      document.getElementById('progressText').innerText = percent + '%';
+      document.getElementById('progressBar').value = percent;
+    }
+
+    function buildApp(weekNumber, kcalData) {
+      const app = document.getElementById('app');
+      app.innerHTML = '';
+      const checked = getObj(STORAGE_KEY);
+      for (let w=1; w<=TOTAL_WEEKS; w++) {
+        const weekSection = document.createElement('section');
+        weekSection.className = 'section';
+        const h2 = document.createElement('h2');
+        h2.innerText = 'Semana ' + w + (w===weekNumber?' (actual)':'');
+        weekSection.appendChild(h2);
+
+        days.forEach((day, dIdx) => {
+          const ul = document.createElement('ul');
+          const dayLi = document.createElement('li');
+          dayLi.style.display = 'flex';
+          dayLi.style.flexDirection = 'column';
+          const dayTitle = document.createElement('span');
+          dayTitle.style.fontWeight = 'bold';
+          dayTitle.style.fontSize = '1.07em';
+          dayTitle.innerText = day;
+          dayLi.appendChild(dayTitle);
+
+          const taskList = document.createElement('ul');
+          routine[day].forEach((item, idx) => {
+            const li = document.createElement('li');
+            const key = `w${w}-d${dIdx}-${idx}`;
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = !!checked[key];
+            cb.onchange = () => {
+              checked[key] = cb.checked;
+              setObj(STORAGE_KEY, checked);
+              updateProgress(checked);
+            };
+            li.appendChild(cb);
+            li.appendChild(document.createTextNode(item));
+            taskList.appendChild(li);
+          });
+          dayLi.appendChild(taskList);
+
+          // input para kcal gastadas
+          const kcalInp = document.createElement('input');
+          kcalInp.type = 'number';
+          kcalInp.min = 0;
+          kcalInp.placeholder = 'kcal';
+          const kcalKey = `w${w}-d${dIdx}`;
+          kcalInp.value = kcalData[kcalKey] || '';
+          kcalInp.oninput = () => {
+            kcalData[kcalKey] = kcalInp.value;
+            setObj(KCAL_KEY, kcalData);
+            buildSemanasListado(weekNumber, kcalData, getObj(WEEK_DONE_KEY));
+          };
+          kcalInp.style.marginLeft = '10px';
+          dayLi.appendChild(kcalInp);
+
+          const kcalLab = document.createElement('span');
+          kcalLab.className = 'kcal-label';
+          kcalLab.innerText = 'kcal gastadas';
+          dayLi.appendChild(kcalLab);
+
+          ul.appendChild(dayLi);
+          weekSection.appendChild(ul);
+        });
+        app.appendChild(weekSection);
+      }
+      updateProgress(checked);
+    }
+
+    document.getElementById('resetBtn').onclick = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(START_KEY);
+      localStorage.removeItem(KCAL_KEY);
+      localStorage.removeItem(KCAL_WEEK_KEY);
+      localStorage.removeItem(WEEK_DONE_KEY);
+      location.reload();
+    };
+
+    window.addEventListener('load', () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./service-worker.js');
+      }
+      const weekNumber = getWeekNumber();
+      document.getElementById('weekInfo').innerText = 'Semana actual: ' + weekNumber;
+      const kcalData = getObj(KCAL_KEY);
+      buildSemanasListado(weekNumber, kcalData, getObj(WEEK_DONE_KEY));
+      buildApp(weekNumber, kcalData);
+    });
+  </script>
+</body>
+</html>
